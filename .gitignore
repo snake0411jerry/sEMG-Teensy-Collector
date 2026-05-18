@@ -1,0 +1,10 @@
+# 忽略編譯產生的檔案
+   build/
+   *.hex
+   *.elf
+   *.bin
+   
+# 如果有使用 Python 處理訊號
+   __pycache__/
+   *.pyc
+   .venv/
