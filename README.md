@@ -5,25 +5,23 @@
 
 ## 🗂️ 專案目錄結構
 
-\`\`\`text
-sEMG-Teensy-Collector/
-├── .vscode/             # VS Code 編輯器工作區設定檔
-├── 0513Combined/        # 整合測試資料庫或特定進度備份 (2026/05/13)
-├── Model/               # 存放訓練好的 AI 模型權重檔 (如 .h5) 與資料標準化工具 (如 .pkl)
-├── arduino/             # Teensy 4.1 韌體程式碼 (.ino)，包含歷次版本的硬體訊號擷取程式
-├── firmware/            
-│   └── reademg.py       # 透過 Serial 讀取 Teensy 原始 EMG 訊號的 Python 通訊腳本
-└── src/                 # Python 核心分析與模型原始碼
-    ├── Preprocess/      # 資料前處理模組
-    │   ├── CheckFrame.py           # 檢查/校正擷取影片中的特定幀
-    │   ├── FindFrame.py            # 尋找與定位影片、骨架開始結束的特徵幀
-    │   ├── emg_preprocess.py       # 肌電訊號ms to frame、增加segment
-    │   └── emg_skelton_combined.py # EMG 訊號與骨架節點數據同步整合腳本
-    ├── TestModel/       # 模型測試與推論模組
-    │   └── predict_emg.py          # 載入預訓練模型並進行即時/離線動作預測
-    └── TrainingModel/   # 模型訓練模組
+sEMG-Teensy-Collector/ 
+├── .vscode/                 # VS Code 編輯器工作區設定檔 
+├── 0513Combined/            # 整合測試資料庫或特定進度備份 (2026/05/13) 
+├── Model/                   # 存放訓練好的 AI 模型權重檔 (如 .h5) 與資料標準化工具 (如 .pkl) 
+├── arduino/                 # Teensy 4.1 韌體程式碼 (.ino)，包含歷次版本的硬體訊號擷取程式 
+├── firmware/
+│   └── reademg.py           # 透過 Serial 讀取 Teensy 原始 EMG 訊號的 Python 通訊腳本 
+└── src/                     # Python 核心分析與模型原始碼 
+    ├── Preprocess/          # 資料前處理模組 
+    │   ├── CheckFrame.py           # 檢查/校正擷取影片中的特定幀 
+    │   ├── FindFrame.py            # 尋找與定位影片、骨架開始結束的特徵幀 
+    │   ├── emg_preprocess.py       # 肌電訊號ms to frame、增加segment 
+    │   └── emg_skelton_combined.py # EMG 訊號與骨架節點數據同步整合腳本 
+    ├── TestModel/           # 模型測試與推論模組 
+    │   └── predict_emg.py          # 載入預訓練模型並進行即時/離線動作預測 
+    └── TrainingModel/       # 模型訓練模組 
         └── TrainModel.py           # 定義神經網路架構與執行 EMG 模型訓練
-\`\`\`
 
 ## 💻 硬體與腳位設定 (Hardware Setup)
 * **微控制器:** Teensy 4.1
