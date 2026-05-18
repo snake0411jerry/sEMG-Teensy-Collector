@@ -5,6 +5,8 @@
 
 ## 🗂️ 專案目錄結構
 
+\`\`\`text
+
 sEMG-Teensy-Collector/ 
 ├── .vscode/                 # VS Code 編輯器工作區設定檔 
 ├── 0513Combined/            # 整合測試資料庫或特定進度備份 (2026/05/13) 
@@ -22,6 +24,8 @@ sEMG-Teensy-Collector/
     │   └── predict_emg.py          # 載入預訓練模型並進行即時/離線動作預測 
     └── TrainingModel/       # 模型訓練模組 
         └── TrainModel.py           # 定義神經網路架構與執行 EMG 模型訓練
+
+\`\`\`
 
 ## 💻 硬體與腳位設定 (Hardware Setup)
 * **微控制器:** Teensy 4.1
