@@ -1,0 +1,17 @@
+# 硬體通訊
+pyserial
+
+# AI 模型、資料處理與機器學習
+tensorflow
+scikit-learn
+scipy
+numpy
+pandas
+joblib
+
+# 數據視覺化
+matplotlib
+
+# 影像與骨架辨識 (如果專案中有用到請保留)
+mediapipe
+opencv-python
