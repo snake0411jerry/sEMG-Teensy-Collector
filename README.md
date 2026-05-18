@@ -38,7 +38,7 @@ sEMG-Teensy-Collector/
 ### 1. 取得專案程式碼
 請團隊成員先將專案 Clone 至本地端：
 \`\`\`bash
-git clone https://github.com/你的帳號/sEMG-Teensy-Collector.git
+git clone https://github.com/snake0411jerry/sEMG-Teensy-Collector.git
 cd sEMG-Teensy-Collector
 \`\`\`
 
@@ -49,6 +49,15 @@ cd sEMG-Teensy-Collector
 1. 建議使用 conda 或 venv 建立獨立的虛擬環境。
 2. 執行 `firmware/reademg.py` 測試電腦是否能順利接收來自 Teensy 的 8 通道訊號。
 3. 若需進行模型推論，請執行 `src/TestModel/predict_emg.py`，確保 `Model/` 資料夾內有對應的模型權重檔。
+
+### 使用說明
+1. 先使用Opencap錄製影片並生成dataset
+2. 下載過後使用 src/Preprocess/FindFrame.py 確認開始與結束偵，若無法確認準確偵可使用 src/Preprocess/CheckFrame.py 確認單獨偵
+3. 將opencap dataset 中的 Markerdata 中的trc檔用excel開啟並另存為csv檔
+4. 將 Markerdata中的csv 開始偵數從1改為前面所偵測的開始偵與將結束偵後的偵數刪除
+5. 使用 src/Preprocess/emg_preprocess.py，將emg訊號切分為不同組次以利之後與Markerdate對齊
+6. 使用 src/Preprocess/emg_skelton_combined.py 將Markerdata與emg結合，計算節點速度V與加速度a並輸出訓練模型檔案
+7. 使用src/TrainingModel/TrainModel.py 訓練模型
 
 ## 👥 開發團隊 (Contributors)
 * 林寬泓
