@@ -47,8 +47,8 @@ cd sEMG-Teensy-Collector
 
 ### 3. 軟體端 (Python)
 1. 建議使用 conda 或 venv 建立獨立的虛擬環境。
-2. 執行 `firmware/reademg.py` 測試電腦是否能順利接收來自 Teensy 的 8 通道訊號。
-3. 若需進行模型推論，請執行 `src/TestModel/predict_emg.py`，確保 `Model/` 資料夾內有對應的模型權重檔。
+2. 使用 Python venv： 輸入 python -m venv venv 建立，然後輸入 venv\Scripts\activate 啟動 ; 使用 Conda： 輸入 conda create -n emg_env python=3.10 建立，然後輸入 conda activate emg_env 啟動。
+3. 確認進入虛擬環境後，在有 requirements.txt 的那層資料夾輸入：pip install -r requirements.txt
 
 ### 使用說明
 1. 先使用Opencap錄製影片並生成dataset
