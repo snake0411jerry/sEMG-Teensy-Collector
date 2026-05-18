@@ -25,6 +25,8 @@ sEMG-Teensy-Collector/
     └── TrainingModel/       # 模型訓練模組 
         └── TrainModel.py           # 定義神經網路架構與執行 EMG 模型訓練
 
+```
+
 ## 💻 硬體與腳位設定 (Hardware Setup)
 * **微控制器:** Teensy 4.1
 * **感測器:** 8 x Grove EMG Sensor
