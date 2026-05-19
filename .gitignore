@@ -1,10 +1,17 @@
-# 忽略編譯產生的檔案
-   build/
-   *.hex
-   *.elf
-   *.bin
-   
-# 如果有使用 Python 處理訊號
-   __pycache__/
-   *.pyc
-   .venv/
+# 忽略影片與大型數據檔
+*.mp4
+*.mov
+*.avi
+*.csv
+
+# 忽略 AI 模型檔 (若小於 100MB 可不加，但通常建議忽略)
+*.h5
+*.pkl
+
+# 忽略 Python 產生的暫存檔
+__pycache__/
+*.pyc
+
+# 忽略你的虛擬環境資料夾 (如果有的話)
+venv/
+env/
