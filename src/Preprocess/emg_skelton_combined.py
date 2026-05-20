@@ -7,15 +7,15 @@ import os
 # 參數設定區 (請根據實際路徑調整)
 # ==========================================
 # 已經轉換好的 EMG 檔案 (含有 Segment 1~5，且已轉為每偵)
-emg_file_path = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\emg\KUAN_RAW_DATA_auto_calculated.csv"
+emg_file_path = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\emg\YU_JIE_0512_auto_calculated.csv"
 
 # TRC 檔案列表 (對應 Segment 1~5)
 trc_files = [
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general1-10.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general11-20.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general21-30.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general31-40.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general41-50.trc.csv"
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general1-10.trc.csv",
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general11-20.trc.csv",
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general21-30.trc.csv",
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general31-40.trc.csv",
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general41-50.trc.csv"
 ]
 
 # 輸出儲存路徑
@@ -24,8 +24,8 @@ output_dir = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\Combined"
 # ==========================================
 # 演算法核心參數
 # ==========================================
-MVC_MAIN_RAW = 920
-MVC_COMP_RAW = 750
+MVC_MAIN_RAW = 827
+MVC_COMP_RAW = 608
 BASELINE_FIXED = 462.0  # 🔥 固定基準值
 
 FPS = 60.0              # 影片幀率
@@ -104,9 +104,9 @@ for segment_idx, trc_path in enumerate(trc_files, start=1):
     # ----------------------------------------------------
     columns_to_keep = {
         'Y5': 'Shoulder_Y', 'Z5': 'Shoulder_Z',
-        'Y13': 'Hip_Y', 'Z13': 'Hip_Z',
-        'Y14': 'Knee_Y', 'Z14': 'Knee_Z',
-        'Y15': 'Ankle_Y', 'Z15': 'Ankle_Z' 
+        'Y12': 'Hip_Y', 'Z12': 'Hip_Z',
+        'Y13': 'Knee_Y', 'Z13': 'Knee_Z',
+        'Y14': 'Ankle_Y', 'Z14': 'Ankle_Z' 
     }
     df_clean = df_resampled_skel[list(columns_to_keep.keys())].rename(columns=columns_to_keep)
     
@@ -167,7 +167,7 @@ for segment_idx, trc_path in enumerate(trc_files, start=1):
     # ----------------------------------------------------
     # 2.4 輸出該 Segment 的結果
     # ----------------------------------------------------
-    output_filename = os.path.join(output_dir, f"KUAN_Segment_{segment_idx}_Combined_Features.csv")
+    output_filename = os.path.join(output_dir, f"YU_JIE_0512_Segment_{segment_idx}_Combined_Features.csv")
     df_final_features.to_csv(output_filename, index=False)
     print(f"✅ Segment {segment_idx} 處理完成，輸出長度: {len(df_final_features)} 偵")
     print(f"📁 儲存至: {output_filename}")

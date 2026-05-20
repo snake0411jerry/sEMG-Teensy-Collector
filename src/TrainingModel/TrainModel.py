@@ -85,7 +85,7 @@ for fp in file_paths:
             break
             
     if current_subj is None:
-        raise ValueError(f"⚠️ 無法從檔名 {filename} 辨識出受試者，請確認檔名是否包含 KUAN, PING, SHIH_MIN 或 YUAN！")
+        raise ValueError(f"⚠️ 無法從檔名 {filename} 辨識出受試者，請確認檔名是否包含 KUAN, SHIH_MIN, YU_JIE或TEST_1！")
         
     # 🔥 關鍵修改 2：將該受試者的最大肌力新增為特徵 (X)
     df['Subject_MVC_Main'] = subject_mvc_map[current_subj]['MVC_Main']
