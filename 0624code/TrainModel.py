@@ -16,7 +16,7 @@ file_paths = glob.glob(os.path.join(data_dir, "*_Combined_Features.csv"))
 train_files, val_files = train_test_split(file_paths, test_size=0.2, random_state=42)
 
 # 定義特徵欄位名稱
-static_cols = ['Subj_Age', 'Subj_Height', 'Subj_Weight', 'Subj_Gender']
+static_cols = ['Subj_Age', 'Subj_Height_m', 'Subj_Weight_norm', 'Subj_Gender', 'Load_1RM_Ratio']
 label_emg_cols = ['EMG_Main_MVC', 'EMG_Compass_MVC']
 # 💡 更新：定義三個代償標籤的欄位名稱
 label_comp_cols = ['Comp_Heel_Raise', 'Comp_Knee_Valgus', 'Comp_Trunk_Lean']
