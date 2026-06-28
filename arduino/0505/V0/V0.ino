@@ -181,7 +181,7 @@ void loop() {
                 digitalWrite(LED_EX1_PIN, HIGH); 
                 digitalWrite(LED_EX2_PIN, HIGH); 
 
-                dataFile = SD.open("TEST1_MAX_RAW_DATA.csv", FILE_WRITE);
+                dataFile = SD.open("bigG_0625_Raw_DATA.csv", FILE_WRITE);
                 if (dataFile) {
                     if (dataFile.size() == 0) {
                         // Header 更新

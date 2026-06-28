@@ -7,25 +7,25 @@ import os
 # 參數設定區 (請根據實際路徑調整)
 # ==========================================
 # 已經轉換好的 EMG 檔案 (含有 Segment 1~5，且已轉為每偵)
-emg_file_path = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\emg\YU_JIE_0512_auto_calculated.csv"
+emg_file_path = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\emg\KUAN_RAW_DATA_auto_calculated.csv"
 
 # TRC 檔案列表 (對應 Segment 1~5)
 trc_files = [
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general1-10.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general11-20.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general21-30.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general31-40.trc.csv",
-    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0512\OPENCAP\OpenCapData_YU_JIE\OpenCapData_6c63d2e6-0ea9-4781-87c2-f7d1c73c885a\MarkerData\general41-50.trc.csv"
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general1-10.trc",
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general11-20.trc", 
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general21-30.trc",
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general31-40.trc" ,
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\opoencap\KUAN\21-50\OpenCapData_6dd32c04-9aaa-446f-b58b-f56163bf7867\MarkerData\general41-50.trc"
 ]
 
 # 輸出儲存路徑
-output_dir = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\Combined"
+output_dir = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0602\Combined"
 
 # ==========================================
 # 演算法核心參數
 # ==========================================
-MVC_MAIN_RAW = 827
-MVC_COMP_RAW = 608
+MVC_MAIN_RAW = 1019
+MVC_COMP_RAW = 1018
 BASELINE_FIXED = 462.0  # 🔥 固定基準值
 
 FPS = 60.0              # 影片幀率
@@ -76,7 +76,7 @@ for segment_idx, trc_path in enumerate(trc_files, start=1):
     # 2.1 讀取與插值對齊 TRC 骨架數據
     # ----------------------------------------------------
     try:
-        df_gen = pd.read_csv(trc_path, skiprows=4)
+        df_gen = pd.read_csv(trc_path, sep='\t', skiprows=4)
     except FileNotFoundError:
         print(f"⚠️ 找不到 TRC 檔案: {trc_path}，跳過此組。")
         continue
@@ -103,23 +103,50 @@ for segment_idx, trc_path in enumerate(trc_files, start=1):
     # 2.2 特徵工程：提取需要的骨架點與計算角度/速度/加速度
     # ----------------------------------------------------
     columns_to_keep = {
-        'Y5': 'Shoulder_Y', 'Z5': 'Shoulder_Z',
-        'Y12': 'Hip_Y', 'Z12': 'Hip_Z',
-        'Y13': 'Knee_Y', 'Z13': 'Knee_Z',
-        'Y14': 'Ankle_Y', 'Z14': 'Ankle_Z' 
+        'Y5': 'Shoulder_Y', 'Z5': 'Shoulder_Z',         # 捨棄 Shoulder_X，減少無效雜訊
+        'X12': 'Hip_X', 'Y12': 'Hip_Y', 'Z12': 'Hip_Z', # 必須保留 Hip_X 以計算大腿 3D 向量
+        'X13': 'Knee_X', 'Y13': 'Knee_Y', 'Z13': 'Knee_Z',       # 對應截圖 LKnee
+        'X14': 'Ankle_X', 'Y14': 'Ankle_Y', 'Z14': 'Ankle_Z',    # 對應截圖 LAnkle
+        'X15': 'BigToe_X', 'Y15': 'BigToe_Y', 'Z15': 'BigToe_Z', # 對應截圖 LBigToe
+        'X16': 'SmallToe_X', 'Y16': 'SmallToe_Y', 'Z16': 'SmallToe_Z' # 對應截圖 LSmallToe
     }
     df_clean = df_resampled_skel[list(columns_to_keep.keys())].rename(columns=columns_to_keep)
+
+    # 🔥 優化：利用 BigToe 與 SmallToe 計算腳掌前緣的中點，形成更穩定的腳掌向量
+    df_clean['Toe_X'] = (df_clean['BigToe_X'] + df_clean['SmallToe_X']) / 2.0
+    df_clean['Toe_Y'] = (df_clean['BigToe_Y'] + df_clean['SmallToe_Y']) / 2.0
+    df_clean['Toe_Z'] = (df_clean['BigToe_Z'] + df_clean['SmallToe_Z']) / 2.0
     
+    # 原始大腿與小腿的夾角 (計算 Y, Z 軸投影)
     v_thigh = np.array([df_clean['Hip_Z'] - df_clean['Knee_Z'], df_clean['Hip_Y'] - df_clean['Knee_Y']]).T
     v_shank = np.array([df_clean['Ankle_Z'] - df_clean['Knee_Z'], df_clean['Ankle_Y'] - df_clean['Knee_Y']]).T
     df_clean['Knee_Angle'] = calculate_angle(v_thigh, v_shank)
+
+    # 計算膝蓋與腳尖的 3D 指向角度差 (偵測膝蓋內凹代償)
+    # 向量 1：大腿 3D 指向 (從 Hip 指向 Knee)
+    v_knee_dir = np.array([df_clean['Knee_X'] - df_clean['Hip_X'],
+                           df_clean['Knee_Y'] - df_clean['Hip_Y'],
+                           df_clean['Knee_Z'] - df_clean['Hip_Z']]).T
+    
+    # 向量 2：腳掌 3D 指向 (從 Ankle 指向穩定的 Toe 中點)
+    v_toe_dir = np.array([df_clean['Toe_X'] - df_clean['Ankle_X'],
+                          df_clean['Toe_Y'] - df_clean['Ankle_Y'],
+                          df_clean['Toe_Z'] - df_clean['Ankle_Z']]).T
+    
+    # 計算兩向量夾角 
+    df_clean['Knee_Toe_Angle_Diff'] = calculate_angle(v_knee_dir, v_toe_dir)
     
     ref_height = (df_clean['Shoulder_Y'] - df_clean['Ankle_Y']).max()
-    for joint in ['Shoulder', 'Knee', 'Ankle']:
-        for axis in ['Y', 'Z']:
+    
+    # 後續的迴圈微積分處理，可以把腳趾統一收斂成 'Toe' 這一個虛擬關節點來跑迴圈
+    for joint in ['Shoulder', 'Knee', 'Ankle', 'Toe']:
+        # 由於 Shoulder 沒有 X 軸，我們加入判斷式避免 KeyError
+        axes = ['Y', 'Z'] if joint == 'Shoulder' else ['X', 'Y', 'Z']
+        for axis in axes: 
             col_name = f"{joint}_{axis}"
-            root_col = f"Hip_{axis}"
+            root_col = f"Hip_{axis}" if axis in ['X', 'Y', 'Z'] else f"Hip_Y"
             
+            # 確保 Hip_X 存在時才進行相減 (Shoulder 沒有 X，不會進來這裡)
             centered_col = f"{col_name}_centered"
             df_clean[centered_col] = df_clean[col_name] - df_clean[root_col]
             
@@ -134,10 +161,17 @@ for segment_idx, trc_path in enumerate(trc_files, start=1):
             df_clean[acc_col] = df_clean[vel_col].diff() / dt
             df_clean[acc_col] = df_clean[acc_col].fillna(0)
 
+    # 角度特徵正規化與速度
     df_clean['Knee_Angle_norm'] = df_clean['Knee_Angle'] / 180.0
     df_clean['Knee_Angle_vel'] = df_clean['Knee_Angle_norm'].diff() / dt
     df_clean['Knee_Angle_vel'] = df_clean['Knee_Angle_vel'].fillna(0)
 
+    # 角度差的正規化與變化率
+    df_clean['Knee_Toe_Diff_norm'] = df_clean['Knee_Toe_Angle_Diff'] / 180.0
+    df_clean['Knee_Toe_Diff_vel'] = df_clean['Knee_Toe_Diff_norm'].diff() / dt
+    df_clean['Knee_Toe_Diff_vel'] = df_clean['Knee_Toe_Diff_vel'].fillna(0)
+
+    # 篩選最終要送入模型的特徵
     final_columns = [col for col in df_clean.columns if col.endswith(('_norm', '_vel', '_acc'))]
     df_final_features = df_clean[final_columns].copy()
     
@@ -167,7 +201,7 @@ for segment_idx, trc_path in enumerate(trc_files, start=1):
     # ----------------------------------------------------
     # 2.4 輸出該 Segment 的結果
     # ----------------------------------------------------
-    output_filename = os.path.join(output_dir, f"YU_JIE_0512_Segment_{segment_idx}_Combined_Features.csv")
+    output_filename = os.path.join(output_dir, f"KUAN_0513_Segment_{segment_idx}_Combined_Features.csv")
     df_final_features.to_csv(output_filename, index=False)
     print(f"✅ Segment {segment_idx} 處理完成，輸出長度: {len(df_final_features)} 偵")
     print(f"📁 儲存至: {output_filename}")

@@ -7,53 +7,39 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, Bidirectional 
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler, StandardScaler 
-from tensorflow.keras.layers import BatchNormalization,Attention, Input, Concatenate, Flatten
-from sklearn.model_selection import train_test_split
+from tensorflow.keras.layers import BatchNormalization, Attention, Input, Concatenate, Flatten
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from scipy.stats import pearsonr
 import joblib
 
 # ==========================================
-# 🔥 關鍵修改 3：全新的 Loss Function (指數級高點懲罰)
+# 1. 讀取資料與受試者資料隔離 (Train: SHIH_MIN, YU_JIE, TEST1 / Val: KUAN)
 # ==========================================
-def peak_weighted_mse(y_true, y_pred):
-    # 確保資料型態一致，避免 TensorFlow 報錯
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred, tf.float32)
-    
-    # 計算基礎的「均方誤差 (MSE)」
-    squared_error = tf.square(y_true - y_pred)
-    
-    # 採用指數級別的懲罰！只要真實值越高，漏抓的代價就極端巨大
-    # tf.exp 會讓 y_true=1.0 時的權重變成 e^4 (約 54 倍)，強迫模型去抓 Peak
-    peak_weight = tf.exp(4.0 * y_true) 
-    
-    # 移除對低點的保護，讓模型全心全意追高點
-    return tf.reduce_mean(squared_error * peak_weight)
-
-# ==========================================
-# 1. 讀取資料與正規化準備 (加入個人 MVC 特徵版)
-# ==========================================
-data_dir = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\Combined"
+# 🔥 更新為新的資料路徑
+data_dir = r"D:\project\NCU\114\Jumior\AI Project\Dataset\Code\0519Combined\Origin"
 file_pattern = os.path.join(data_dir, "*_Combined_Features.csv")
 file_paths = glob.glob(file_pattern)
 
 if not file_paths:
     raise ValueError(f"在 {data_dir} 找不到任何檔案，請檢查路徑！")
 
+# 🔥 新增 TEST1 的 MVC 數值
 subject_mvc_map = {
     'KUAN':     {'MVC_Main': 920, 'MVC_Compass': 750},
     'SHIH_MIN': {'MVC_Main': 975, 'MVC_Compass': 774}, 
-    'YU_JIE':   {'MVC_Main': 827, 'MVC_Compass': 608}
+    'YU_JIE':   {'MVC_Main': 827, 'MVC_Compass': 608},
+    'TEST1':    {'MVC_Main': 1018, 'MVC_Compass': 1019}
 }
 
-print(f"📂 總共找到了 {len(file_paths)} 個檔案準備進行訓練！")
+print(f"📂 總共找到了 {len(file_paths)} 個檔案準備進行處理！")
 
-all_dfs = []
+train_dfs = []
+val_dfs = []
+
 for fp in file_paths:
     df = pd.read_csv(fp)
-    
     filename = os.path.basename(fp).upper()
+    
     current_subj = None
     for subj in subject_mvc_map.keys():
         if subj in filename:
@@ -61,79 +47,78 @@ for fp in file_paths:
             break
             
     if current_subj is None:
-        raise ValueError(f"⚠️ 無法從檔名 {filename} 辨識出受試者！")
+        print(f"⚠️ 略過未知受試者檔案: {filename}")
+        continue
         
     df['Subject_MVC_Main'] = subject_mvc_map[current_subj]['MVC_Main']
     df['Subject_MVC_Compass'] = subject_mvc_map[current_subj]['MVC_Compass']
     
-    all_dfs.append(df)
+    # KUAN 放入驗證集，其餘 (SHIH_MIN, YU_JIE, TEST1) 放入訓練集
+    if current_subj == 'TEST1':
+        val_dfs.append(df)
+    else:
+        train_dfs.append(df)
 
-combined_df = pd.concat(all_dfs, ignore_index=True)
+if not train_dfs or not val_dfs:
+    raise ValueError("訓練集或驗證集為空！請確認檔名與分類邏輯。")
 
-feature_cols = [col for col in combined_df.columns if not col.startswith('EMG_')]
+# ==========================================
+# 1.5 獨立訓練 Scaler (防止資料洩漏)
+# ==========================================
+train_combined_df = pd.concat(train_dfs, ignore_index=True)
+
+feature_cols = [col for col in train_combined_df.columns if not col.startswith('EMG_')]
 label_cols = ['EMG_Main_MVC', 'EMG_Compass_MVC']
 
 scaler_x = StandardScaler()
-scaler_x.fit(combined_df[feature_cols].values)
+scaler_x.fit(train_combined_df[feature_cols].values)
 
 scaler_y = MinMaxScaler()
-scaler_y.fit(combined_df[label_cols].values)
+scaler_y.fit(train_combined_df[label_cols].values)
+
+print(f"✅ 成功載入！訓練集檔案數: {len(train_dfs)}，驗證集 (KUAN) 檔案數: {len(val_dfs)}")
 
 # ==========================================
-# 2. 滑動時間窗切割 (🚨 獨立在每個 Segment 內切割)
+# 2. 滑動時間窗切割
 # ==========================================
-# 🔥 關鍵修改 1：縮小時間窗，提高特徵濃度，避免發力瞬間被稀釋
 window_size = 40  
 step_size = 5     
 
-X_windows_list = []
-Y_labels_list = []
+def create_windows(df_list, dataset_name=""):
+    X_list, Y_list = [], []
+    segments = 0
+    for df in df_list:
+        X_scaled = scaler_x.transform(df[feature_cols].values)
+        Y_scaled = scaler_y.transform(df[label_cols].values)
+        
+        for j in range(0, len(X_scaled) - window_size, step_size):
+            X_list.append(X_scaled[j : j + window_size, :])
+            Y_list.append(Y_scaled[j + window_size // 2, :])
+        segments += 1
+    
+    X_arr = np.array(X_list)
+    Y_arr = np.array(Y_list)
+    print(f"  - {dataset_name} 共提取了 {len(X_arr)} 個時間窗 (來自 {segments} 個 Segment)")
+    return X_arr, Y_arr
 
 print("⏳ 正在進行時間窗切割...")
-for i, df in enumerate(all_dfs):
-    X_data = scaler_x.transform(df[feature_cols].values)
-    Y_data = scaler_y.transform(df[label_cols].values)
-    
-    segments_extracted = 0
-    for j in range(0, len(X_data) - window_size, step_size):
-        window_X = X_data[j : j + window_size, :]
-        target_Y = Y_data[j + window_size // 2, :]
-        
-        X_windows_list.append(window_X)
-        Y_labels_list.append(target_Y)
-        segments_extracted += 1
-        
-    print(f"  - Segment {i+1} 提取了 {segments_extracted} 個時間窗")
-
-X_tensor = np.array(X_windows_list)
-Y_tensor = np.array(Y_labels_list)
-print(f"✅ 總共生成了 {len(X_tensor)} 個時間窗樣本！")
+X_train, Y_train = create_windows(train_dfs, "訓練集 (Train)")
+X_test, Y_test = create_windows(val_dfs, "驗證集 (Val/KUAN)")
 
 # ==========================================
-# 3. 資料切分、建模與訓練
+# 3. 建模與訓練
 # ==========================================
-print("\n🔀 正在從總時間窗中隨機抽取 20% 作為測試集...")
-
-X_train, X_test, Y_train, Y_test = train_test_split(
-    X_tensor, Y_tensor, test_size=0.2, random_state=42
-)
-
-print(f"✅ 訓練集樣本數: {len(X_train)}")
-print(f"✅ 測試集樣本數: {len(X_test)}")
-
 print("\n🧠 正在建構 CNN-BiLSTM-Attention 模型...")
 inputs = Input(shape=(X_train.shape[1], X_train.shape[2]))
 
-# 🔥 關鍵修改 2：移除 MaxPooling，縮小 Kernel Size，降低 Dropout
 # CNN 層 
 x = tf.keras.layers.Conv1D(filters=64, kernel_size=3, activation='relu')(inputs)
 x = BatchNormalization()(x)
-# (已移除 MaxPooling1D)
 
 # 第一層 Bi-LSTM
 x = Bidirectional(LSTM(units=64, return_sequences=True))(x)
 x = BatchNormalization()(x)
-x = Dropout(0.1)(x) # 降低 Dropout
+x = Dropout(0.1)(x) 
 
 # 第二層 Bi-LSTM 
 lstm_out = Bidirectional(LSTM(units=32, return_sequences=True, dropout=0.1))(x)
@@ -145,12 +130,15 @@ x = Flatten()(attention_out)
 # 全連接層與輸出層
 x = Dense(units=32, activation='relu')(x)
 outputs = Dense(units=2, activation='sigmoid')(x)
-
 model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-# 編譯模型
+# 宣告優化器
 custom_adam = tf.keras.optimizers.Adam(learning_rate=0.001)
-model.compile(optimizer=custom_adam, loss=peak_weighted_mse, metrics=['mae'])
+
+# 使用 Huber Loss
+huber_loss = tf.keras.losses.Huber(delta=0.1) 
+
+model.compile(optimizer=custom_adam, loss=huber_loss, metrics=['mae'])
 model.summary()
 
 reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
@@ -163,13 +151,13 @@ history = model.fit(
     X_train, Y_train,
     epochs=100,
     batch_size=32,
-    validation_data=(X_test, Y_test),
+    validation_data=(X_test, Y_test), 
     callbacks=[early_stop, reduce_lr], 
     verbose=1
 )
 
 # ==========================================
-# 4. 預測與視覺化 (畫圖)
+# 4. 預測與視覺化 (針對未見過的 KUAN 資料)
 # ==========================================
 predictions = model.predict(X_test)
 
@@ -177,15 +165,15 @@ plt.figure(figsize=(15, 8))
 plt.subplot(2, 1, 1)
 plt.plot(Y_test[:, 0], label='True EMG_Main (%MVC)', color='blue', alpha=0.7)
 plt.plot(predictions[:, 0], label='Predicted EMG_Main', color='red', linestyle='--')
-plt.title('Optimized CNN-BiLSTM - EMG Main (Real Causality)')
+plt.title('Performance on Unseen Subject (KUAN) - EMG Main (Huber Loss)')
 plt.ylabel('EMG (0~1)')
 plt.legend()
 
 plt.subplot(2, 1, 2)
 plt.plot(Y_test[:, 1], label='True EMG_Compass (%MVC)', color='green', alpha=0.7)
 plt.plot(predictions[:, 1], label='Predicted EMG_Compass', color='orange', linestyle='--')
-plt.title('Optimized CNN-BiLSTM - EMG Compass (Real Causality)')
-plt.xlabel('Time Windows (Tested on Random 20% Data)')
+plt.title('Performance on Unseen Subject (KUAN) - EMG Compass (Huber Loss)')
+plt.xlabel('Time Windows')
 plt.ylabel('EMG (0~1)')
 plt.legend()
 
@@ -195,23 +183,19 @@ plt.show()
 # ==========================================
 # 6. 計算預測評估指標 (Metrics)
 # ==========================================
-print("\n📊 測試集 (20% 未看過資料) 最終評估成績單：")
+print("\n📊 驗證集 (KUAN 專屬資料) 最終評估成績單：")
 
 y_true_main = Y_test[:, 0]
 y_pred_main = predictions[:, 0]
-
 y_true_comp = Y_test[:, 1]
 y_pred_comp = predictions[:, 1]
 
 mae_main = mean_absolute_error(y_true_main, y_pred_main)
 mae_comp = mean_absolute_error(y_true_comp, y_pred_comp)
-
 rmse_main = np.sqrt(mean_squared_error(y_true_main, y_pred_main))
 rmse_comp = np.sqrt(mean_squared_error(y_true_comp, y_pred_comp))
-
 r2_main = r2_score(y_true_main, y_pred_main)
 r2_comp = r2_score(y_true_comp, y_pred_comp)
-
 corr_main, _ = pearsonr(y_true_main, y_pred_main)
 corr_comp, _ = pearsonr(y_true_comp, y_pred_comp)
 
@@ -231,6 +215,6 @@ print(f"  - 均方根誤差 (RMSE)      : {rmse_comp:.4f}")
 # 7. 儲存模型與正規化器 
 # ==========================================
 print("\n💾 正在儲存模型與正規化器...")
-model.save("lightweight_emg_model.h5")
-joblib.dump(scaler_x, "scaler_x.pkl")
-print("✅ 儲存完畢！您現在擁有 lightweight_emg_model.h5 與 scaler_x.pkl 兩個檔案了。")
+model.save("lightweight_emg_model_huber.h5")
+joblib.dump(scaler_x, "scaler_x_huber.pkl")
+print("✅ 儲存完畢！")

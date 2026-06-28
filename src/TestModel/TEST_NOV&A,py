@@ -1,0 +1,150 @@
+import os
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import joblib
+
+# ==========================================
+# 🌟 加入這兩行來解決 Matplotlib 中文顯示問題
+# ==========================================
+plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei']  # Windows 使用微軟正黑體
+plt.rcParams['axes.unicode_minus'] = False                # 確保圖表上的負號正常顯示
+
+# ==========================================
+# 1. 設定檔案路徑與載入模型/正規化器
+# ==========================================
+# ⚠️ 請將這裡替換成你要測試的單一 CSV 檔案路徑
+test_csv_path = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0529\Combined\KUAN_0529_Segment_4_Combined_Features.csv"
+
+# 載入剛剛訓練好的模型與 Scaler (實驗 B 版本)
+model_path = "teacher_multitask_random_noVA.keras"
+scaler_x_path = "scaler_x_multitask_random_noVA.pkl"
+scaler_y_path = "scaler_y_emg_multitask_random.pkl"
+
+print("⏳ 正在載入模型與正規化器...")
+model = tf.keras.models.load_model(model_path)
+scaler_x = joblib.load(scaler_x_path)
+scaler_y_emg = joblib.load(scaler_y_path)
+print("✅ 載入成功！")
+
+# ==========================================
+# 2. 讀取測試資料與前處理
+# ==========================================
+print(f"📂 正在讀取測試檔案: {os.path.basename(test_csv_path)}")
+df = pd.read_csv(test_csv_path)
+
+# 確保與訓練時完全一致的排除清單
+exclude_keywords = ['EMG_', 'Knee_Toe_Diff', 'vel', 'acc', '_V', '_A', 'Velocity', 'Acceleration', 'Comp_Prob_Target', 'Unnamed: 0']
+feature_cols = [col for col in df.columns if not any(k in col for k in exclude_keywords)]
+
+print(f"✅ 測試資料集特徵數量: {len(feature_cols)}") 
+
+# 萃取需要畫圖參考的真實標籤
+true_valgus_angle = df['Knee_Toe_Diff_norm'].values * 180.0 
+
+# 正規化特徵輸入
+X_data = scaler_x.transform(df[feature_cols].values)
+
+# ==========================================
+# 3. 滑動時間窗切割 (Inference 專用：步長 = 1)
+# ==========================================
+window_size = 40
+X_test_list = []
+valid_indices = [] 
+
+for j in range(0, len(X_data) - window_size + 1, 1):
+    X_test_list.append(X_data[j : j + window_size, :])
+    valid_indices.append(j + window_size - 1) 
+
+X_test = np.array(X_test_list)
+print(f"✅ 測試資料轉換完成，共產生 {len(X_test)} 個連續時間窗預測點。")
+
+# ==========================================
+# 4. 進行模型預測
+# ==========================================
+print("🧠 模型預測中...")
+predictions = model.predict(X_test)
+pred_emg_scaled = predictions[0]  
+pred_comp_prob = predictions[1].flatten() # 將維度壓平方便後續計算
+
+# 將 EMG 反向轉換回真實的 %MVC 數值
+pred_emg_real = scaler_y_emg.inverse_transform(pred_emg_scaled)
+pred_emg_main = pred_emg_real[:, 0]
+pred_emg_comp = pred_emg_real[:, 1]
+
+# ==========================================
+# 4.5 🔥 新增：前後 100 幀平滑化邏輯
+# ==========================================
+print("🔧 進行預測訊號平滑化 (前後 100 幀)...")
+smoothed_comp_binary = np.zeros_like(pred_comp_prob)
+half_window = 100
+
+for i in range(len(pred_comp_prob)):
+    # 決定視窗範圍 (避免超出陣列邊界)
+    start_idx = max(0, i - half_window)
+    end_idx = min(len(pred_comp_prob), i + half_window + 1)
+    
+    # 擷取這個範圍內的預測機率
+    window_data = pred_comp_prob[start_idx:end_idx]
+    
+    # 計算這個範圍內「機率小於 0.5」的幀數
+    count_less_than_half = np.sum(window_data < 0.5)
+    
+    # 核心邏輯：如果超過 20 幀小於 0.5，輸出 0 (無代償)，反之輸出 1 (有代償)
+    if count_less_than_half > 20:
+        smoothed_comp_binary[i] = 0
+    else:
+        smoothed_comp_binary[i] = 1
+
+# ==========================================
+# 5. 繪製預測結果圖表
+# ==========================================
+print("📈 正在生成圖表...")
+
+time_axis = valid_indices 
+
+plt.figure(figsize=(14, 12))
+
+# --- 圖表 1：兩條肌肉的發力預測 (%MVC) ---
+plt.subplot(3, 1, 1)
+plt.plot(time_axis, pred_emg_main, label='Predicted EMG Main (主動肌)', color='red', linewidth=2)
+plt.plot(time_axis, pred_emg_comp, label='Predicted EMG Compass (協同肌)', color='orange', linewidth=2)
+plt.title(f'Predicted Muscle Forces (%MVC) - {os.path.basename(test_csv_path)}')
+plt.ylabel('EMG Force (%MVC)')
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.legend(loc='upper right')
+
+# --- 圖表 2：🔥 修改後的膝蓋內凹代償判定 (二元輸出) ---
+plt.subplot(3, 1, 2)
+# 使用 drawstyle='steps-mid' 讓 0 和 1 的變化呈現方波的感覺
+plt.plot(time_axis, smoothed_comp_binary, label='Smoothed Valgus Detection (平滑後判定)', 
+         color='purple', linewidth=2, drawstyle='steps-mid')
+
+# 把有代償的區域(1)填滿顏色，視覺效果更好
+plt.fill_between(time_axis, 0, smoothed_comp_binary, step='mid', color='purple', alpha=0.3)
+
+plt.title('Smoothed Knee Valgus Detection (0: Normal, 1: Compensation)')
+plt.ylabel('Status (0 or 1)')
+plt.yticks([0, 1], ['0 (正常)', '1 (代償)']) # 強制 Y 軸只顯示 0 和 1
+plt.ylim(-0.2, 1.2)
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.legend(loc='upper right')
+
+# --- 圖表 3：真實的膝蓋內凹角度 (參考用) ---
+plt.subplot(3, 1, 3)
+plt.plot(true_valgus_angle, label='True Valgus Angle (真實內凹角度)', color='gray', alpha=0.8, linewidth=2)
+plt.axhline(y=30.0, color='red', linestyle='--', label='Compensation Threshold (30°)')
+
+plt.axvline(x=valid_indices[0], color='black', linestyle=':', label='Prediction Start')
+
+plt.title('True Knee Valgus Angle (Reference)')
+plt.xlabel('Time (Frames)')
+plt.ylabel('Angle (Degrees)')
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.legend(loc='upper right')
+
+plt.tight_layout()
+plt.show()
+
+print("🎉 執行完畢！")

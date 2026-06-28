@@ -2,96 +2,149 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import joblib
-import matplotlib.pyplot as plt
+import os
+import glob
 
 # ==========================================
-# 0. 重新定義自訂的損失函數 (載入模型時會用到)
+# 0. 重新定義自訂的損失函數 (載入模型用)
 # ==========================================
 def peak_weighted_mse(y_true, y_pred):
     y_true = tf.cast(y_true, tf.float32)
     y_pred = tf.cast(y_pred, tf.float32)
     squared_error = tf.square(y_true - y_pred)
-    peak_weight = 1.0 + 60.0 * y_true 
-    base_ones = tf.ones_like(y_true)
-    zero_weight = tf.where(y_true < 0.05, 10.0 * (0.05 - y_true) + 1.0, base_ones)
-    final_weight = tf.maximum(peak_weight, zero_weight)
-    return tf.reduce_mean(squared_error * final_weight)
+    peak_weight = tf.exp(4.0 * y_true)  # 確保預測腳本也使用跟訓練時相同的 Loss 函數寫法
+    return tf.reduce_mean(squared_error * peak_weight)
 
 # ==========================================
-# 1. 載入我們的大腦 (Model) 與量尺 (Scaler)
+# 1. 載入模型與量尺
 # ==========================================
 print("🧠 正在載入模型與正規化器...")
-# 載入時告訴 TensorFlow 我們自訂的函數是什麼
 model = tf.keras.models.load_model(
-    "lightweight_emg_model.h5", 
+    r"D:\project\NCU\114\Jumior\AI Project\Dataset\Code\teacher_tcn_transformer_model.keras", 
     custom_objects={'peak_weighted_mse': peak_weighted_mse}
 )
-scaler_x = joblib.load("scaler_x.pkl")
-print("✅ 載入成功！準備進行預測。")
+scaler_x = joblib.load(r"D:\project\NCU\114\Jumior\AI Project\Dataset\Code\scaler_x.pkl")
+print("✅ 載入成功！準備進行批次預測。\n")
 
 # ==========================================
-# 2. 讀取「全新」的骨架資料
+# 2. 設定受試者 MVC 字典
 # ==========================================
-# 假設這是未來系統即時錄到、或全新的 CSV 檔案
-new_data_path = r"D:\project\NCU\114\Jumior\AI Project\Dataset\0513\Combined\KUAN_New_Action.csv" # 替換成您要測試的檔案路徑
-df_new = pd.read_csv(new_data_path)
+mvc_dict = {
+    'KUAN':     {'MVC_Main': 920, 'MVC_Compass': 750},
+    'SHIH_MIN': {'MVC_Main': 975, 'MVC_Compass': 774}, 
+    'YU_JIE':   {'MVC_Main': 827, 'MVC_Compass': 608},
+    'TEST1':    {'MVC_Main': 1018, 'MVC_Compass': 1019}  
+}
 
-# 🔥 關鍵：提供這位受試者的 MVC 上限
-# （未來如果是新受試者，只要幫他量一次這兩個數字填進來就好）
-subject_mvc_main = 920    
-subject_mvc_compass = 750 
+search_pattern = r"D:\project\NCU\114\Jumior\AI Project\Dataset\Code\0519Combined\Origin" + r"/*_Segment_*_Combined_Features.csv"
+file_list = glob.glob(search_pattern, recursive=True)
 
-df_new['Subject_MVC_Main'] = subject_mvc_main
-df_new['Subject_MVC_Compass'] = subject_mvc_compass
-
-# ==========================================
-# 3. 資料前處理 (使用舊量尺)
-# ==========================================
-# 抓取特徵欄位 (排除原本檔案裡可能有的 EMG 標籤)
-feature_cols = [col for col in df_new.columns if not col.startswith('EMG_')]
-
-# 🚨 絕對不能用 fit_transform，只能用 transform！
-# 因為我們必須用訓練時的那把「舊量尺」來衡量新資料
-X_new_scaled = scaler_x.transform(df_new[feature_cols].values)
+if not file_list:
+    print("❌ 找不到符合條件的 CSV 檔案，請確認執行路徑或檔名格式。")
+else:
+    print(f"🔍 共找到 {len(file_list)} 個檔案，開始處理...\n")
 
 # ==========================================
-# 4. 滑動時間窗切割 (Step=1 達成連續高解析度預測)
+# 3. 批次處理每個檔案
 # ==========================================
-window_size = 100
-X_windows = []
+# 🚨 修正：將這裡的預測窗口與新訓練好的模型保持一致 (40)
+window_size = 40
 
-print("⏳ 正在將新資料切成時間窗...")
-# 為了畫出最平滑的連續預測曲線，推論時通常 step 設為 1 (每一偵都預測一次)
-for i in range(len(X_new_scaled) - window_size + 1):
-    X_windows.append(X_new_scaled[i : i + window_size])
+for file_path in file_list:
+    print("-" * 50)
+    print(f"📂 正在處理: {file_path}")
     
-X_tensor_new = np.array(X_windows)
+    # 讀取 CSV
+    df = pd.read_csv(file_path)
+    filename = os.path.basename(file_path).upper()
+    
+    # 自動識別受試者並給予 MVC
+    matched_subject = "DEFAULT"
+    for subject in mvc_dict.keys():
+        if subject in filename and subject != "DEFAULT":
+            matched_subject = subject
+            break
+            
+    subj_mvc = mvc_dict[matched_subject]
+    df['Subject_MVC_Main'] = subj_mvc["MVC_Main"]
+    df['Subject_MVC_Compass'] = subj_mvc["MVC_Compass"]
+    print(f"👤 識別受試者為: {matched_subject} (Main: {subj_mvc['MVC_Main']}, Compass: {subj_mvc['MVC_Compass']})")
 
-# ==========================================
-# 5. 進行預測！
-# ==========================================
-print("⚡ 模型正在進行預測...")
-predictions = model.predict(X_tensor_new)
+    # ==========================================
+    # 強制指定 22 個特徵名稱與順序
+    # ==========================================
+    feature_cols = [
+        'Shoulder_Y_norm', 'Shoulder_Y_vel', 'Shoulder_Y_acc',
+        'Shoulder_Z_norm', 'Shoulder_Z_vel', 'Shoulder_Z_acc',
+        'Knee_Y_norm', 'Knee_Y_vel', 'Knee_Y_acc',
+        'Knee_Z_norm', 'Knee_Z_vel', 'Knee_Z_acc',
+        'Ankle_Y_norm', 'Ankle_Y_vel', 'Ankle_Y_acc',
+        'Ankle_Z_norm', 'Ankle_Z_vel', 'Ankle_Z_acc',
+        'Knee_Angle_norm', 'Knee_Angle_vel',
+        'Subject_MVC_Main', 'Subject_MVC_Compass' 
+    ]
+    
+    # 檢查是否所有特徵都存在於表格中
+    missing_cols = [col for col in feature_cols if col not in df.columns]
+    if missing_cols:
+        print(f"⚠️ 嚴重錯誤：新資料缺少以下必要特徵：{missing_cols}")
+        continue
 
-# 提取預測結果 (0~1 之間的 %MVC)
-pred_main = predictions[:, 0]
-pred_compass = predictions[:, 1]
+    print(f"👉 成功抓取 {len(feature_cols)} 個特徵，準備進行正規化...")
+    
+    # 執行正規化
+    X_new_for_scaling = df[feature_cols].values
+    X_new_scaled = scaler_x.transform(X_new_for_scaling)
+    print(f"📊 縮放後特徵 - 平均值: {np.mean(X_new_scaled):.2f}, 最大值: {np.max(X_new_scaled):.2f}, 最小值: {np.min(X_new_scaled):.2f}")
 
-print(f"✅ 預測完成！共產出了 {len(pred_main)} 筆預測數據。")
+    # ==========================================
+    # 滑動時間窗切割
+    # ==========================================
+    X_windows = []
+    for i in range(len(X_new_scaled) - window_size + 1):
+        X_windows.append(X_new_scaled[i : i + window_size])
+        
+    if not X_windows:
+        print(f"⚠️ 檔案行數少於時間窗長度 {window_size}，跳過此檔案。")
+        continue
+        
+    X_tensor_new = np.array(X_windows)
+    
+    # 1. 模型進行原始預測
+    predictions = model.predict(X_tensor_new, verbose=0)
+    pred_main = predictions[:, 0]
+    pred_compass = predictions[:, 1]
+    
+    # ==========================================
+    # 🌟 在這裡加入平滑化 (只在預測階段做)
+    # ==========================================
+    # window=5 代表取前後 5 偵的平均值，你可以視情況改成 3 或 7
+    pred_main = pd.Series(pred_main).rolling(window=5, min_periods=1).mean().values
+    pred_compass = pd.Series(pred_compass).rolling(window=5, min_periods=1).mean().values
+    
+    # ==========================================
+    # 4. 補齊時間窗落差 (Padding) - 🚨 對齊中央修正版 🚨
+    # ==========================================
+    # 因為訓練時模型是預測時間窗的「正中間 (第 20 幀)」
+    # 所以缺少的 39 幀必須拆開：前面補 20 個 NaN，後面補 19 個 NaN
+    front_pad_length = window_size // 2
+    back_pad_length = window_size - 1 - front_pad_length
+    
+    front_pad = np.full(front_pad_length, np.nan)
+    back_pad = np.full(back_pad_length, np.nan)
+    
+    # 這樣拼接才能確保預測曲線在時間軸上與真實動作 100% 完美貼合
+    pred_main_padded = np.concatenate([front_pad, pred_main, back_pad])
+    pred_compass_padded = np.concatenate([front_pad, pred_compass, back_pad])
+    
+    df['Predicted_EMG_Main'] = pred_main_padded
+    df['Predicted_EMG_Compass'] = pred_compass_padded
+    
+    # 另存新檔
+    output_path = file_path.replace(".csv", "_Predicted.csv")
+    df.to_csv(output_path, index=False)
+    
+    print(f"✅ 預測成功並已合併！新檔案儲存至: {output_path}")
 
-# ==========================================
-# 6. 視覺化預測結果
-# ==========================================
-plt.figure(figsize=(12, 5))
-plt.plot(pred_main, label='Predicted EMG Main (%MVC)', color='red')
-plt.plot(pred_compass, label='Predicted EMG Compass (%MVC)', color='orange')
-plt.title('Future Prediction from Skeleton Data Only')
-plt.xlabel('Time (Frames)')
-plt.ylabel('Predicted EMG (0~1 %MVC)')
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-# 如果您想把預測結果存成新的 CSV：
-df_result = pd.DataFrame({'Predicted_Main': pred_main, 'Predicted_Compass': pred_compass})
-df_result.to_csv("Predicted_EMG.csv", index=False)
+print("-" * 50)
+print("🎉 所有符合條件的檔案均已批次處理完成！")
